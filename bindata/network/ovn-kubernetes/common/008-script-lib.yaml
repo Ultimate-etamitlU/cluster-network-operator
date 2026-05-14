@@ -50,6 +50,19 @@ data:
         exit 1
       fi
 
+      # Workaround: install GARP drop flow before starting ovn-controller to prevent
+      # stale GARPs for EgressIPs that migrated during node downtime.
+      # On pod restart the patch port persists in OVS, so the flow is installed
+      # synchronously before exec. On full node reboot the patch port does not
+      # exist yet (ovn-controller creates it), so we background a retry loop that
+      # installs the flow as soon as the port appears.
+      # Remove when https://issues.redhat.com/browse/FDP-1537 is available.
+      if ovs-vsctl br-exists "br-ex" 2>/dev/null; then
+        if ! add_garp_drop_flow br-ex; then
+          (wait-and-add-garp-drop-flow br-ex &)
+        fi
+      fi
+
       echo "$(date -Iseconds) - starting ovn-controller"
       exec ovn-controller \
         unix:${vswitch_dbsock} \
